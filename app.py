@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, flash, redirect, url_for, send_from_directory
+from flask import Flask, render_template, request, flash, redirect, send_from_directory
 import os
 import pandas as pd
 from werkzeug.utils import secure_filename
@@ -8,15 +8,13 @@ app.secret_key = 'your_secret_key_here'
 
 UPLOAD_FOLDER = '/tmp/'
 ALLOWED_EXTENSIONS = {'csv'}
-MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # for example 16MB
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
-
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -44,10 +42,17 @@ def index():
                 filepath2 = os.path.join(app.config['UPLOAD_FOLDER'], filename2)
                 file2.save(filepath2)
 
-                # CSV comparison logic here (omitted for brevity)
-                # ...
+                # CSV comparison logic
+                csv1 = pd.read_csv(filepath1)
+                csv2 = pd.read_csv(filepath2)
 
-                return send_from_directory(directory=app.config['UPLOAD_FOLDER'], filename=filename1, as_attachment=True)
+                combined_csv = csv1.merge(csv2[['ip_address', 'Secret Server URL', 'Configuration Item']], on='ip_address', how='left')
+
+                result_filename = "result.csv"
+                result_filepath = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
+                combined_csv.to_csv(result_filepath, index=False)
+
+                return send_from_directory(directory=app.config['UPLOAD_FOLDER'], filename=result_filename, as_attachment=True)
 
             except Exception as e:
                 flash('Error processing files. Please ensure they are valid CSVs.')
@@ -59,6 +64,14 @@ def index():
 
     return render_template('index.html')
 
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return render_template('500.html'), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
