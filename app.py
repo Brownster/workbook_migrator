@@ -62,7 +62,11 @@ def index():
             flash('Allowed file types are .csv')
             return redirect(request.url)
 
-    return render_template('index.html')
+    return render_template('index.html', download_link=url_for('download_file', filename=filename1))
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory(directory=app.config['UPLOAD_FOLDER'], filename=filename, as_attachment=True)
 
 
 @app.errorhandler(404)
