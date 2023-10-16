@@ -1,77 +1,31 @@
-from flask import Flask, render_template, request, flash, redirect, send_from_directory
-import os
+from flask import Flask, request, render_template
 import pandas as pd
-from werkzeug.utils import secure_filename
+import io
 
 app = Flask(__name__)
-app.secret_key = '123456789'
-
-UPLOAD_FOLDER = '/tmp/'
-ALLOWED_EXTENSIONS = {'csv'}
-MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    download_link = None
-
+    daily_totals = None
+    weekly_totals = None
+    
     if request.method == 'POST':
-        if 'file1' not in request.files or 'file2' not in request.files:
-            flash('No file part')
-            return redirect(request.url)
+        csv_file = request.files['file']
+        if not csv_file.filename.endswith('.csv'):
+            return "Please upload a CSV file", 400
 
-        file1 = request.files['file1']
-        file2 = request.files['file2']
+        # Read CSV content into a pandas DataFrame
+        df = pd.read_csv(csv_file)
 
-        if file1.filename == '' or file2.filename == '':
-            flash('No selected file')
-            return redirect(request.url)
+        # Process the CSV data as per your original PowerShell script
+        df['ActualStartDate'] = pd.to_datetime(df['u_actual_start'], format='%d-%m-%Y').dt.date
+        daily_totals = df.groupby('ActualStartDate')['time_worked'].sum().reset_index()
 
-        if file1 and allowed_file(file1.filename) and file2 and allowed_file(file2.filename):
-            filename1 = None
-            try:
-                filename1 = secure_filename(file1.filename)
-                filepath1 = os.path.join(app.config['UPLOAD_FOLDER'], filename1)
-                file1.save(filepath1)
+        df['Week'] = pd.to_datetime(df['u_actual_start'], format='%d-%m-%Y').dt.strftime('%U')
+        weekly_totals = df.groupby('Week')['time_worked'].sum().reset_index()
 
-                filename2 = secure_filename(file2.filename)
-                filepath2 = os.path.join(app.config['UPLOAD_FOLDER'], filename2)
-                file2.save(filepath2)
+    return render_template('upload.html', daily_totals=daily_totals.to_dict(orient='records') if daily_totals is not None else None, weekly_totals=weekly_totals.to_dict(orient='records') if weekly_totals is not None else None)
 
-                # CSV comparison logic
-                csv1 = pd.read_csv(filepath1)
-                csv2 = pd.read_csv(filepath2)
 
-                combined_csv = csv1.merge(csv2[['ip_address', 'Secret Server URL', 'Configuration Item']], on='ip_address', how='left')
-
-                result_filename = "result.csv"
-                result_filepath = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
-                combined_csv.to_csv(result_filepath, index=False)
-
-                download_link = url_for('download_file', filename=result_filename)
-                return render_template('index.html', download_link=download_link)
-
-            except Exception as e:
-                flash('Error processing files. Please ensure they are valid CSVs.')
-
-    return render_template('index.html', download_link=download_link)
-
-@app.route('/download/<filename>')
-def download_file(filename):
-    return send_from_directory(directory=app.config['UPLOAD_FOLDER'], filename=filename, as_attachment=True)
-
-@app.errorhandler(404)
-def not_found_error(error):
-    return render_template('404.html'), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return render_template('500.html'), 500
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
